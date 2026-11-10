@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Venta de Papel GCP</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1a73e8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; padding-bottom: 80px; }
+    header { background-color: #1a73e8; color: white; padding: 15px 20px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .container { max-width: 800px; margin: 20px auto; padding: 0 15px; }
+    .card { background: white; border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .user-section { display: flex; gap: 10px; align-items: center; }
+    input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
+    button { background-color: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; }
+    button:active { background-color: #1557b0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; margin-top: 15px; }
+    .product-card { background: white; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #e0e0e0; }
+    .product-card img { width: 100%; height: 120px; object-fit: contain; border-radius: 4px; }
+    .product-card h4 { font-size: 14px; margin: 8px 0; height: 36px; overflow: hidden; }
+    .product-card .price { color: #1e8e3e; font-weight: bold; margin-bottom: 6px; }
+    .qty-controls { display: flex; justify-content: center; align-items: center; gap: 8px; }
+    .qty-btn { width: 30px; height: 30px; border-radius: 50%; font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+    .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #ddd; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
+    .total-price { font-size: 18px; font-weight: bold; color: #1a73e8; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>VENTA DE PAPEL GCP</h1>
+  </header>
+
+  <div class="container">
+    <!-- Identificación del empleado -->
+    <div class="card">
+      <h3>Datos del Colaborador</h3>
+      <div class="user-section" style="margin-top: 10px;">
+        <input type="text" id="nomina" placeholder="Ingresa tu No. de Nómina">
+        <button onclick="buscarEmpleado()">Buscar</button>
+      </div>
+      <div id="infoEmpleado" style="margin-top: 10px; font-weight: 500; color: #555;"></div>
+    </div>
+
+    <!-- Catálogo de productos -->
+    <h3>Catálogo Disponible</h3>
+    <div id="catalogo" class="grid">
+      <p>Cargando productos...</p>
+    </div>
+  </div>
+
+  <!-- Barra inferior para confirmar -->
+  <div class="footer-bar">
+    <div>
+      <span>Total: </span>
+      <span id="totalTxt" class="total-price">$0.00</span>
+    </div>
+    <button onclick="enviarPedido()">Confirmar Pedido</button>
+  </div>
+
+  <script>
+    // ⚠️ AQUÍ PEGA TU URL DE GOOGLE APPS SCRIPT QUE TERMINA EN /exec
+    const URL_API = "https://script.google.com/macros/s/AKfycbxjVvBDsQLSmb5fdT2MkLozr-zdvWAeRKE2lkpXTCG4tDcKRY0CHWqWHo2APd7kmKXa/exec";
+    const CLAVE_API = "EcMf12BRq20";
+
+    let productos = [];
+    let carrito = {}; 
+    let empleadoValido = null;
+
+    window.addEventListener('load', () => {
+      cargarCatalogo();
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+    });
+
+    async function API(accion, datos = {}) {
+      const resp = await fetch(URL_API, {
+        method: 'POST',
+        body: JSON.stringify({ clave: CLAVE_API, accion: accion, datos: datos })
+      });
+      return await resp.json();
+    }
+
+    async function cargarCatalogo() {
+      try {
+        const res = await API('catalogo');
+        if (res.ok) {
+          productos = res.productos;
+          renderCatalogo();
+        } else {
+          alert("Error: " + res.error);
+        }
+      } catch (e) {
+        document.getElementById('catalogo').innerHTML = '<p>Error al conectar con el servidor.</p>';
+      }
+    }
+
+    function renderCatalogo() {
+      const container = document.getElementById('catalogo');
+      container.innerHTML = '';
+      productos.forEach(p => {
+        const cant = carrito[p.id] || 0;
+        const card = document.createElement('div');
+        card.className = 'product-card';
+        card.innerHTML = `
+          <img src="${p.imagen || 'https://via.placeholder.com/150'}" alt="${p.nombre}">
+          <h4>${p.nombre}</h4>
+          <div class="price">$${p.precio.toFixed(2)}</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Stock: ${p.stock}</div>
+          <div class="qty-controls">
+            <button class="qty-btn" onclick="cambiarCant('${p.id}', -1)">-</button>
+            <span>${cant}</span>
+            <button class="qty-btn" onclick="cambiarCant('${p.id}', 1)">+</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function cambiarCant(id, delta) {
+      const p = productos.find(x => x.id === id);
+      const actual = carrito[id] || 0;
+      const nueva = actual + delta;
+      if (nueva >= 0 && nueva <= p.stock) {
+        if (nueva === 0) delete carrito[id];
+        else carrito[id] = nueva;
+        renderCatalogo();
+        calcularTotal();
+      }
+    }
+
+    function calcularTotal() {
+      let total = 0;
+      for (const id in carrito) {
+        const p = productos.find(x => x.id === id);
+        total += p.precio * carrito[id];
+      }
+      document.getElementById('totalTxt').innerText = `$${total.toFixed(2)}`;
+    }
+
+    async function buscarEmpleado() {
+      const nom = document.getElementById('nomina').value.trim();
+      if (!nom) return;
+      const res = await API('empleado', { nomina: nom });
+      if (res.ok && res.empleado) {
+        empleadoValido = res.empleado;
+        document.getElementById('infoEmpleado').innerText = `✔ ${res.empleado.nombre} (${res.empleado.nave})`;
+      } else {
+        empleadoValido = null;
+        document.getElementById('infoEmpleado').innerText = `❌ Nómina no encontrada`;
+      }
+    }
+
+    async function enviarPedido() {
+      if (!empleadoValido) {
+        alert("Primero valida tu número de nómina.");
+        return;
+      }
+      const items = Object.keys(carrito).map(id => ({ id: id, cantidad: carrito[id] }));
+      if (items.length === 0) {
+        alert("Agrega al menos un producto al carrito.");
+        return;
+      }
+      
+      const res = await API('comprar', { nomina: empleadoValido.nomina, items: items });
+      if (res.ok) {
+        alert(`¡Pedido #${res.pedido.numero} registrado con éxito!`);
+        carrito = {};
+        renderCatalogo();
+        calcularTotal();
+      } else {
+        alert("Error al registrar pedido: " + res.error);
+      }
+    }
+  </script>
+</body>
+</html>
